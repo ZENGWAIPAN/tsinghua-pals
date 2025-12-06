@@ -1,4 +1,3 @@
-# modules/ai_engine.py
 import google.generativeai as genai
 import streamlit as st
 import fnmatch
@@ -14,85 +13,100 @@ def configure_gemini():
 
 def get_best_available_model():
     """
-    智能挑選模型函數：
-    不要硬編碼名字，而是從 Google 返回的真實列表中，
-    挑選出最強、最新的一個。
+    智能挑選模型：避免 404 的核心邏輯
     """
     try:
-        # 1. 獲取所有可用模型
         all_models = list(genai.list_models())
-        
-        # 2. 過濾出支持內容生成的模型 (排除掉 embedding 那些)
         valid_models = [m.name for m in all_models if 'generateContent' in m.supported_generation_methods]
         
         if not valid_models:
             return None, "沒有找到支持生成的模型"
 
-        # 3. 定義優先級 (越靠前越優先)
-        # 我們優先找 1.5 Pro，其次是 Flash，最後是普通 Pro
-        # 這裡的 * 是通配符，可以匹配 models/gemini-1.5-pro-001 等任何變體
+        # 優先級策略
         priorities = [
-            "*gemini-1.5-pro*",       # 第一志願：任何版本的 1.5 Pro
-            "*gemini-1.5-flash*",     # 第二志願：任何版本的 1.5 Flash
-            "*gemini-pro*",           # 第三志願：老版 Pro
-            "*gemini*"                # 保底：隨便來個 Gemini 相關的
+            "*gemini-1.5-pro*", 
+            "*gemini-1.5-flash*", 
+            "*gemini-pro*", 
+            "*gemini*"
         ]
         
-        # 4. 按優先級遍歷匹配
         for pattern in priorities:
             for model_name in valid_models:
                 if fnmatch.fnmatch(model_name, pattern):
-                    return model_name, None # 找到了！直接返回真實名字
+                    return model_name, None
         
-        # 5. 如果上面都沒匹配到，就默認拿列表裡的第一個
         return valid_models[0], None
 
     except Exception as e:
         return None, str(e)
 
 def generate_ppt_content(topic, uploaded_files):
-    # 1. 配置
+    # 1. 配置與選模型
     if not configure_gemini():
         return "配置錯誤，無法生成。"
     
-    # 2. 動態獲取模型名字 (這是解決 404 的核心！)
     model_name, error = get_best_available_model()
-    
     if not model_name:
         return f"無法自動找到可用模型。錯誤信息: {error}"
     
-    # 3. 開始生成
+    # 2. 構建 Prompt (含 CSS 排版優化)
+    prompt = f"""
+    你的身份：清華大學入學考試語文輔導專家。
+    任務：閱讀提供的教材資料，為主題「{topic}」製作一份講課用的幻燈片代碼。
+    工具：Marp (Markdown Presentation)。
+    
+    【核心排版規則 (至關重要)】：
+    1. **防止爆版**：Marp 默認字號很大。如果一張幻燈片內容超過 6 行，或者包含表格，**必須**使用 CSS 縮小字號，或者拆分成兩張幻燈片。
+    2. **強制 CSS 樣式**：
+       - 請在文檔開頭準確輸出以下樣式塊，不要修改：
+       <style>
+       section {{
+           font-size: 24px;
+           padding: 40px;
+       }}
+       h1, h2 {{
+           font-size: 1.5em;
+           color: #660874;
+       }}
+       table {{
+           font-size: 20px;
+       }}
+       </style>
+    3. **表格處理**：如果表格行數超過 6 行，必須拆分為兩個表格，放在兩頁幻燈片上。
+    
+    【內容結構要求】：
+    1. **Marp 標頭**：
+       ---
+       marp: true
+       theme: gaia
+       class: lead
+       ---
+    2. **封面**：標題、副標題。
+    3. **目錄**。
+    4. **核心內容**：(知識點需詳細，但請遵循上述排版規則)。
+    5. **易錯點辨析**：(重點)。
+    6. **真題演練**。
+    7. **總結**。
+    
+    **輸出**：僅輸出 Markdown 源代碼，不要包含 ```markdown 標記。
+    """
+    
+    content_parts = [prompt]
+    
+    # 3. 處理文件
+    if uploaded_files:
+        for file in uploaded_files:
+            content_parts.append({
+                "mime_type": file.type,
+                "data": file.getvalue()
+            })
+    
+    # 4. 發送請求
     try:
-        # 構建 Prompt
-        prompt = f"""
-        你的身份：清華大學入學考試語文輔導專家。
-        任務：閱讀提供的教材資料，為主題「{topic}」製作一份講課用的幻燈片代碼。
-        工具：Marp (Markdown Presentation)。
-        
-        要求：
-        1. **排版**：必須包含 Marp 標頭 (theme: gaia)。
-        2. **結構**：封面、目錄、核心知識點提取、易錯點辨析、真題演練、總結。
-        3. **輸出**：僅輸出 Markdown 源代碼。
-        """
-        
-        content_parts = [prompt]
-        
-        # 處理文件
-        if uploaded_files:
-            for file in uploaded_files:
-                content_parts.append({
-                    "mime_type": file.type,
-                    "data": file.getvalue()
-                })
-        
-        # 實例化模型 (使用剛才動態找到的那個名字)
         model = genai.GenerativeModel(model_name)
-        
-        # 發送請求
         response = model.generate_content(content_parts)
         
-        # 在結果前面加上這行註釋，讓你看到到底用了哪個模型
-        header_info = f"<!-- ✅ 成功！本次生成使用的是: {model_name} -->\n"
+        header_info = f"<!-- ✅ 排版優化模式 | 模型: {model_name} -->\n"
         return header_info + response.text
 
     except Exception as e:
