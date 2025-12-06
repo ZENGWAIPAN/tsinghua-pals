@@ -64,4 +64,45 @@ if menu == "📚 智能備課 (PPT)":
                     if success:
                         st.toast("已存入數據庫！", icon="🎉")
                     else:
+
                         st.error(msg)
+
+# ... (前面的代碼保持不變) ...
+
+# ==========================================
+# 🚑 系統診斷模式 (添加到代碼最後)
+# ==========================================
+st.sidebar.markdown("---")
+st.sidebar.header("🔧 系統診斷")
+
+if st.sidebar.checkbox("開啟診斷面板"):
+    st.title("🏥 系統體檢報告")
+    
+    # 1. 檢查 Key 是否存在 (只顯示前4位，防止洩露)
+    try:
+        key = st.secrets["GEMINI_API_KEY"]
+        st.write(f"🔑 **API Key 狀態:** 已讀取 (前綴: `{key[:5]}...`)")
+    except Exception as e:
+        st.error(f"🔑 **API Key 狀態:** 讀取失敗! ({e})")
+    
+    # 2. 檢查 Google 服務器連通性 & 模型列表
+    import google.generativeai as genai
+    st.write("📡 **正在連接 Google 服務器...**")
+    
+    try:
+        # 強制配置
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        
+        # 嘗試列出所有可用模型
+        models = list(genai.list_models())
+        model_names = [m.name for m in models]
+        
+        if model_names:
+            st.success(f"✅ **連接成功！** 發現 {len(model_names)} 個模型。")
+            st.json(model_names) # 打印出來看看有沒有 gemini-1.5-pro
+        else:
+            st.warning("⚠️ 連接成功，但沒有發現可用模型 (可能權限不足)。")
+            
+    except Exception as e:
+        st.error(f"❌ **連接失敗 (致命錯誤):** {e}")
+        st.info("💡 如果這裡是 404，說明你的 API Key 無效，或者 Key 所在的項目沒有開啟權限。")
