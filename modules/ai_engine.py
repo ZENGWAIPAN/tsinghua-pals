@@ -28,7 +28,7 @@ def generate_ppt_content(topic, uploaded_files):
         return "配置錯誤，無法生成。"
     
     # 這裡我們顯式指定最新版本，防止 404
-    model_name = "gemini-1.5-pro-latest" 
+    model_name = "gemini-1.5-pro"
     
     try:
         model = genai.GenerativeModel(model_name)
@@ -77,4 +77,5 @@ def generate_ppt_content(topic, uploaded_files):
             return response.text
         except Exception as e:
             # 這裡會打印出更詳細的錯誤信息幫助調試
+
             return f"生成失敗 (Error): {str(e)}"
